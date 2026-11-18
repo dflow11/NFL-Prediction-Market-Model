@@ -1,0 +1,9 @@
+[Unit]
+Description=nflpm: archive Polymarket price history
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO@
+ExecStart=@UV@ run --quiet scripts/pm_archive.py
+TimeoutStartSec=3h

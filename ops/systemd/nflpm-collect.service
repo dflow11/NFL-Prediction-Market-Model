@@ -1,0 +1,9 @@
+[Unit]
+Description=nflpm: one Kalshi + Polymarket snapshot pass
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO@
+ExecStart=@UV@ run --quiet scripts/collect.py
+TimeoutStartSec=4min
