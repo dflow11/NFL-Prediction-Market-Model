@@ -57,7 +57,7 @@ def features() -> None:
     t = pl.read_parquet(root / "features/targets.parquet")
     with pl.Config(tbl_rows=20, tbl_cols=10):
         for p in paths[:-1]:
-            print(lead_lag(pl.read_parquet(p), t))
+            print(p.stem, lead_lag(pl.read_parquet(p).join(t, on="game_id", how="left")))
 
 
 @app.command()
@@ -66,6 +66,23 @@ def train() -> None:
     from nflpm.models.train import train_all
     for p in train_all():
         print(p)
+
+
+@app.command()
+def freeze() -> None:
+    """Write models/frozen/manifest.json (git commit, config hash, model hashes)."""
+    from nflpm.models.evaluate import freeze as run
+    print(run())
+
+
+@app.command(name="eval")
+def eval_(holdout: bool = typer.Option(False, "--holdout", help="Evaluate holdout rows (needs a matching manifest)."),
+          force: bool = typer.Option(False, "--force", help="Allow a holdout re-run (stamped in the report).")) -> None:
+    """Write reports/eval_{mode}.md (pre-holdout), or reports/holdout_eval_{mode}.md with --holdout."""
+    from nflpm.models.evaluate import evaluate, evaluate_holdout
+    from nflpm.transform.games import MODES
+    for mode in MODES:
+        print(evaluate_holdout(mode, force) if holdout else evaluate(mode))
 
 
 @app.command()
