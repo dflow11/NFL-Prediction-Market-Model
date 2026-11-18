@@ -58,7 +58,7 @@ def test_polymarket_complement_and_settlement_exclusion(tmp_path):
                {"timestamp": after, "price": 0.999, "resolution_seconds": 0},  # terminal tick
                {"timestamp": after + 60, "price": payout, "resolution_seconds": 0}]  # settlement
         write_raw(tmp_path / f"raw/polymarket/prices_history/{tok}/60s/c.json.gz", json.dumps({"data": pts}).encode())
-    rows, settle = polymarket_history(tmp_path, mp)
+    rows, settle = polymarket_history(tmp_path, mp, {"g": KICK + timedelta(hours=3, minutes=20)})
     assert len(rows) == 2  # only the two real prices
     (h,) = collapse_home(pl.DataFrame(rows)).to_dicts()
     assert h["p_home_mid"] == pytest.approx((0.58 + 1 - 0.44) / 2)

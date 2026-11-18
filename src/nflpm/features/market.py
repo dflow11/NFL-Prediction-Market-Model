@@ -5,13 +5,12 @@ so every source timestamp is < predict_time as the point-in-time rule requires.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from pathlib import Path
+from datetime import datetime
 
 import polars as pl
 
-from nflpm.paths import UTC, append_jsonl, config, data_root
-from nflpm.transform.games import MODES, predict_time
+from nflpm.paths import append_jsonl, config, data_root
+from nflpm.transform.games import MODES, game_ends, predict_time
 
 CLIP = (0.01, 0.99)
 # At equal timestamps prefer the finest/most direct quote.
@@ -40,14 +39,10 @@ def _asof(grid: pl.DataFrame, prices: pl.DataFrame, at: str, strict: bool) -> pl
                                    allow_exact_matches=not strict, check_sortedness=False)
 
 
-def with_game_end(games: pl.DataFrame) -> pl.DataFrame:
-    # ponytail: kickoff + fallback until Phase 9 derives game_end_ts from pbp
-    return games.with_columns(game_end_ts=pl.col("kickoff_utc") + pl.duration(minutes=config()["game_end_fallback_minutes"]))
-
-
 def prev_game_end(games: pl.DataFrame) -> pl.DataFrame:
     """game_id -> latest game_end_ts among both teams' previous games."""
-    g = with_game_end(games.filter(pl.col("kickoff_utc").is_not_null()))
+    g = games.filter(pl.col("kickoff_utc").is_not_null())
+    g = g.join(game_ends(g), on="game_id")
     team_games = pl.concat([g.select("game_id", "kickoff_utc", "game_end_ts", team="home"),
                             g.select("game_id", "kickoff_utc", "game_end_ts", team="away")]).sort("team", "kickoff_utc")
     prev = team_games.with_columns(prev_end=pl.col("game_end_ts").shift(1).over("team"))
@@ -107,19 +102,3 @@ def targets(games: pl.DataFrame, home: pl.DataFrame) -> pl.DataFrame:
         p = _one_per_ts(home.filter(pl.col("venue") == venue)).select("game_id", "ts_utc", **{col: "p_home_mid"})
         out = _asof(out, p, "kickoff_utc", strict=False).rename({"ts_utc": f"{col}_ts"})
     return out.sort("game_id")
-
-
-def write_market_features(games: pl.DataFrame, now: datetime | None = None) -> list[Path]:
-    root = data_root()
-    now = now or datetime.now(UTC)
-    home = pl.read_parquet(root / "clean/prices_home.parquet")
-    ids = set(home["game_id"].unique())
-    feats = market_features(grid(games, ids, now), home)
-    (root / "features").mkdir(exist_ok=True)
-    out = []
-    for m in MODES:
-        out.append(root / f"features/market_{m}.parquet")
-        feats.filter(pl.col("mode") == m).write_parquet(out[-1])
-    out.append(root / "features/targets.parquet")
-    targets(games.filter(pl.col("game_id").is_in(list(ids))), home).write_parquet(out[-1])
-    return out

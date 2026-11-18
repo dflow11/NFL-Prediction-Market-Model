@@ -72,3 +72,8 @@ def home_tz(team: str, season: int) -> str:
         if f == team and season < first:
             return tz
     return FRANCHISES[team][2]
+
+
+def aliases(source: Source) -> dict[str, str]:
+    """Code -> franchise map for vectorized use (pl.Expr.replace_strict)."""
+    return dict(_ALIASES[source])

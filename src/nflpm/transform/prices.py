@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import gzip
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 import polars as pl
 
-from nflpm.paths import config
+from nflpm.transform.games import game_ends
 
 UTC = timezone.utc
 LONG_KEY = ["venue", "market_id", "ts_kind", "resolution_sec", "ts_utc"]
@@ -43,11 +43,6 @@ def quote(bid: float | None, ask: float | None, last: float | None) -> tuple:
     return bid, ask, None, None
 
 
-def game_end(kickoff: datetime) -> datetime:
-    # ponytail: kickoff + fallback until Phase 9 derives game_end_ts from pbp
-    return kickoff + timedelta(minutes=config()["game_end_fallback_minutes"])
-
-
 def kalshi_candles(root: Path, match: pl.DataFrame) -> list[dict]:
     rows = []
     for r in match.iter_rows(named=True):
@@ -64,12 +59,12 @@ def kalshi_candles(root: Path, match: pl.DataFrame) -> list[dict]:
     return rows
 
 
-def polymarket_history(root: Path, match: pl.DataFrame) -> tuple[list[dict], list[dict]]:
+def polymarket_history(root: Path, match: pl.DataFrame, ends: dict[str, datetime]) -> tuple[list[dict], list[dict]]:
     """Price points (resolution_seconds > 0) before game end; settlement = the last resolution-0
     point at/after kickoff (post-game payout, never a price)."""
     rows, settle = [], []
     for r in match.iter_rows(named=True):
-        end = game_end(r["kickoff_utc"])
+        end = ends[r["game_id"]]
         for side in ("home", "away"):
             tok = r[f"{side}_token"]
             final = None
@@ -90,10 +85,10 @@ def polymarket_history(root: Path, match: pl.DataFrame) -> tuple[list[dict], lis
     return rows, settle
 
 
-def snapshot_rows(snaps: pl.DataFrame, kickoffs: dict[str, datetime]) -> list[dict]:
+def snapshot_rows(snaps: pl.DataFrame, ends: dict[str, datetime]) -> list[dict]:
     rows = []
     for s in snaps.filter(pl.col("game_id").is_not_null()).iter_rows(named=True):
-        if s["ts_utc"] >= game_end(kickoffs[s["game_id"]]):
+        if s["ts_utc"] >= ends[s["game_id"]]:
             continue
         bid, ask, mid, src = quote(s["bid"], s["ask"], None)
         rows.append({"venue": s["venue"], "game_id": s["game_id"], "market_id": s["market_or_token"],
@@ -133,11 +128,11 @@ def collapse_home(long: pl.DataFrame) -> pl.DataFrame:
 def build_prices(root: Path) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
     clean = root / "clean"
     mk, mp = pl.read_parquet(clean / "match_kalshi.parquet"), pl.read_parquet(clean / "match_polymarket.parquet")
-    kickoffs = dict(pl.concat([mk.select("game_id", "kickoff_utc"), mp.select("game_id", "kickoff_utc")])
-                    .unique("game_id").iter_rows())
-    hist, pm_settle = polymarket_history(root, mp)
+    ends = dict(game_ends(pl.concat([mk.select("game_id", "kickoff_utc"), mp.select("game_id", "kickoff_utc")])
+                          .unique("game_id")).iter_rows())
+    hist, pm_settle = polymarket_history(root, mp, ends)
     snaps = pl.read_parquet(clean / "snapshots.parquet") if (clean / "snapshots.parquet").exists() else None
-    rows = kalshi_candles(root, mk) + hist + (snapshot_rows(snaps, kickoffs) if snaps is not None else [])
+    rows = kalshi_candles(root, mk) + hist + (snapshot_rows(snaps, ends) if snaps is not None else [])
     long = pl.DataFrame(rows, schema=LONG_SCHEMA).unique(LONG_KEY, keep="first", maintain_order=True).sort(LONG_KEY)
     settle = pl.concat([kalshi_settlements(pl.read_parquet(clean / "kalshi_markets.parquet"), mk),
                         pl.DataFrame(pm_settle, schema={"venue": pl.String, "game_id": pl.String, "market_id": pl.String,
