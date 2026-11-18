@@ -1,13 +1,31 @@
 """clean/games.parquet from nflverse schedules (`nflpm transform`)."""
 from __future__ import annotations
 
+from datetime import datetime, time, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import polars as pl
 
 from nflpm.ingest.nflverse import read_schedules
-from nflpm.paths import data_root
+from nflpm.paths import UTC, config, data_root
 from nflpm.transform.teams import franchise
+
+ET = ZoneInfo("America/New_York")
+WEEKDAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+MODES = ("pregame", "tuesday")
+
+
+def predict_time(kickoff: datetime, mode: str) -> datetime:
+    """pregame = kickoff − offset; tuesday = latest Tuesday 12:00 ET strictly before kickoff."""
+    m = config()["modes"]
+    if mode == "pregame":
+        return kickoff - timedelta(minutes=m["pregame"]["offset_minutes"])
+    k = kickoff.astimezone(ET)
+    hh, mm = map(int, m["tuesday"]["time_et"].split(":"))
+    d = k.date() - timedelta(days=(k.weekday() - WEEKDAYS.index(m["tuesday"]["weekday"])) % 7)
+    t = datetime.combine(d, time(hh, mm), ET)
+    return (t if t < k else t - timedelta(days=7)).astimezone(UTC)
 
 
 def _implied(ml: pl.Expr) -> pl.Expr:

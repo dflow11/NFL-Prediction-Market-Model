@@ -16,11 +16,15 @@ def archive(slugs: Optional[list[str]] = typer.Argument(None, help="Only these g
 
 
 @app.command()
-def ingest() -> None:
-    """Ingest nflverse schedules into raw/nflverse."""
-    from nflpm.ingest.nflverse import ingest_schedules
-    for p in ingest_schedules():
-        print(p)
+def ingest(source: str = typer.Argument("all", help="nflverse | kalshi | all")) -> None:
+    """Ingest raw data: nflverse schedules; Kalshi markets, match, candles."""
+    if source in ("nflverse", "all"):
+        from nflpm.ingest.nflverse import ingest_schedules
+        for p in ingest_schedules():
+            print(p)
+    if source in ("kalshi", "all"):
+        from nflpm.ingest.kalshi import ingest_kalshi
+        raise typer.Exit(ingest_kalshi())
 
 
 @app.command()
