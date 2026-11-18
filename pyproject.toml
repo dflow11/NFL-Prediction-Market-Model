@@ -1,0 +1,24 @@
+[project]
+name = "nflpm"
+version = "0.1.0"
+description = "NFL prediction-market research: Kalshi vs Polymarket vs a football model (paper only)"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx",
+    "pyyaml",
+    "tenacity",
+    "typer",
+]
+
+[project.scripts]
+nflpm = "nflpm.cli:app"
+
+[dependency-groups]
+dev = ["pytest"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

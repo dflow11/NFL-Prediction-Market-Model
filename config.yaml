@@ -1,0 +1,17 @@
+paths: {data_root: ~/nflpm-data}
+seasons: {first: 1999, current: 2026}
+modes:
+  pregame: {offset_minutes: 60}
+  tuesday: {weekday: TUE, time_et: "12:00"}
+holdout: {start_utc: "2026-12-02T12:00:00Z"}      # 2026 Week 13 → Super Bowl; humans may change before any eval
+rate_limits_rps: {kalshi: 5, polymarket: 5, nflverse: 2}   # lower if docs say so
+polymarket: {variant: global, role: signal_only, grain_ladder_sec: [60, 300, 1800, 10800]}
+collector: {cadence_min: 5, near_kickoff_hours: 3, far_cadence_min: 60, horizon_days: 8, max_snapshot_age_sec: 600}
+game_end_fallback_minutes: 270                    # kickoff + 4h30 when last-play time is unavailable
+model_b: {burn_in_weeks: 4, l2_lambda: 10.0}      # frozen before holdout unlock
+paper_trade: {venue: kalshi, stake_usd: 10, edge_buffer: 0.01}
+fees:
+  kalshi:   # effective-dated; fill from the fee schedule + Get Series Fee Changes; flag unknown dates
+    - {effective_from: null, taker_rate: 0.07, rounding: ceil_cent_per_order}
+gap_buckets_pts: [1, 3]                           # |gap| <1, 1–3, ≥3 probability points; pre-committed
+ops: {notify_cmd: "notify-send nflpm '{unit} failed'", backup_dir: null}
