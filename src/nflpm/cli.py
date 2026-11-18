@@ -61,6 +61,14 @@ def features() -> None:
 
 
 @app.command()
+def train() -> None:
+    """Fit F (frozen: 2000-2023, calibrated on 2024) per mode; walk-forward B; write predictions."""
+    from nflpm.models.train import train_all
+    for p in train_all():
+        print(p)
+
+
+@app.command()
 def validate() -> None:
     """Validate clean and feature tables; exit 1 on any failure."""
     from nflpm.paths import data_root
