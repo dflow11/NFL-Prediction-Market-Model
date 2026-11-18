@@ -1,6 +1,7 @@
 [Unit]
 Description=nflpm: one Kalshi + Polymarket snapshot pass
 After=network-online.target
+OnFailure=nflpm-notify@%n.service
 
 [Service]
 Type=oneshot

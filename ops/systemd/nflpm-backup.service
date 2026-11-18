@@ -1,0 +1,8 @@
+[Unit]
+Description=nflpm: rsync raw/ to ops.backup_dir
+OnFailure=nflpm-notify@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO@
+ExecStart=@UV@ run --quiet nflpm backup

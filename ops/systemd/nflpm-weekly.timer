@@ -1,0 +1,9 @@
+[Unit]
+Description=nflpm: weekly pipeline, Tuesday 12:45 ET
+
+[Timer]
+OnCalendar=Tue *-*-* 12:45:00 America/New_York
+Persistent=true
+
+[Install]
+WantedBy=timers.target

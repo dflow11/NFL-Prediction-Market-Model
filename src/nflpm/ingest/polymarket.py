@@ -65,6 +65,12 @@ def is_game(m: dict) -> bool:
     return bool(m.get("gameStartTime")) and teams(m) is not None
 
 
+def in_test_era(game_start: str, seasons: tuple[int, ...]) -> bool:
+    """Regular/post-season games of `seasons`: on or after Sep 1 of the game's own season (no preseason)."""
+    s = season_of(game_start)
+    return s in seasons and parse_ts(game_start) >= datetime(s, 9, 1, tzinfo=UTC)
+
+
 def season_of(game_start: str) -> int:
     t = parse_ts(game_start)
     return t.year if t.month >= 6 else t.year - 1
@@ -198,10 +204,9 @@ def archive(only: list[str]) -> int:
 
     current = config()["seasons"]["current"]
     seasons = (current - 1, current)  # the test era: last season + this one
-    season_start = datetime(seasons[0], 9, 1, tzinfo=UTC)  # drops preseason
     http = Http()
     games = [g for g in list_gamma(http, ("true", "false"), start_date_min=f"{seasons[0]}-06-01T00:00:00Z")
-             if season_start <= parse_ts(g["gameStartTime"]) <= now + PRE
+             if in_test_era(g["gameStartTime"], seasons) and parse_ts(g["gameStartTime"]) <= now + PRE
              and (not only or g["slug"] in only)]
     empty = exhausted()
     requests = saved = errors = 0

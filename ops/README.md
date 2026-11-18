@@ -14,8 +14,19 @@ loginctl enable-linger "$USER"    # timers keep running when you're logged out
 |---|---|---|
 | `nflpm-collect.timer` | every 5 min (`*:0/5`), not caught up after downtime | `nflpm collect` |
 | `nflpm-archive.timer` | daily 03:30 America/Chicago, catches up after downtime | `nflpm archive` |
+| `nflpm-weekly.timer` | Tue 12:45 America/New_York, catches up | `backup → ingest → transform → features → validate → train → eval` (stops at the first failure; eval excludes holdout) |
+| `nflpm-backup.timer` | daily 04:15 America/Chicago, catches up | `nflpm backup` (rsync `raw/` to `ops.backup_dir`) |
+
+Every service has `OnFailure=nflpm-notify@%n.service`, which runs `nflpm notify --unit <name>`:
+it logs to the journal and runs `ops.notify_cmd` from `config.yaml` (best-effort; default `notify-send`).
 
 Data goes to `$NFLPM_DATA_DIR`, defaulting to `~/nflpm-data`.
+
+## Back up raw/
+
+Snapshots and fine-grained Polymarket history can never be re-fetched. Set `ops.backup_dir` in
+`config.yaml` to a directory on another disk; until then `nflpm backup` (daily and at the start of
+the weekly run) only prints a warning.
 
 ## Keep the PC awake
 
@@ -36,6 +47,8 @@ journalctl --user -u nflpm-collect -f
 tail ~/nflpm-data/logs/collector/$(date -u +%Y%m%d).jsonl   # one line per venue per run
 ls ~/nflpm-data/raw/snapshots/*/$(date -u +%Y%m%d) | tail
 ```
+
+Test the failure path: `systemctl --user start nflpm-notify@test.service` should pop a notification.
 
 Run the archive by hand with `systemctl --user start nflpm-archive.service`, or with
 `uv run nflpm archive [slug ...]` to archive just some games.

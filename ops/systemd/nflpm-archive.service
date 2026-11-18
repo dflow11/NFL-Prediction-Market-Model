@@ -1,6 +1,7 @@
 [Unit]
 Description=nflpm: archive Polymarket price history
 After=network-online.target
+OnFailure=nflpm-notify@%n.service
 
 [Service]
 Type=oneshot

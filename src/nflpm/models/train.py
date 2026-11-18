@@ -149,16 +149,23 @@ def predictions(feats: pl.DataFrame, games: pl.DataFrame, bundle: dict, include_
             .join(mm.drop("kickoff_utc"), on=["game_id", "mode"]).join(b, on=["game_id", "mode"], how="left"))
 
 
-def train_all() -> list[Path]:
+def train_all(refit_f: bool = False) -> list[Path]:
+    """F is fit once and then reused (frozen; its hash is in the freeze manifest); B is refit walk-forward
+    and all predictions are rewritten every run."""
     root = data_root()
     games = pl.read_parquet(root / "clean/games.parquet")
     (root / "models").mkdir(exist_ok=True)
     out = []
     for mode in MODES:
         feats = pl.read_parquet(root / f"features/features_{mode}.parquet")
-        bundle = train_F(feats, games)
-        with open(root / f"models/F_{mode}.pkl", "wb") as fh:
-            pickle.dump(bundle, fh)
+        fp = root / f"models/F_{mode}.pkl"
+        if fp.exists() and not refit_f:
+            with open(fp, "rb") as fh:
+                bundle = pickle.load(fh)
+        else:
+            bundle = train_F(feats, games)
+            with open(fp, "wb") as fh:
+                pickle.dump(bundle, fh)
         out.append(root / f"models/preds_{mode}.parquet")
         predictions(feats, games, bundle).write_parquet(out[-1])
         print(mode, "F chosen:", bundle["chosen"],

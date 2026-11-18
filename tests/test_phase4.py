@@ -1,7 +1,7 @@
 """Phase 4: Polymarket game-market detection and season assignment. No network."""
 import json
 
-from nflpm.ingest.polymarket import is_game, season_of, teams
+from nflpm.ingest.polymarket import in_test_era, is_game, season_of, teams
 
 
 def market(outcomes, slug="nfl-x-y-2025-11-16", start="2025-11-16 21:25:00+00"):
@@ -20,3 +20,11 @@ def test_season_of_game_start():
     assert season_of("2025-09-05 00:20:00+00") == 2025
     assert season_of("2026-02-08 23:30:00+00") == 2025  # Super Bowl belongs to the prior season
     assert season_of("2026-09-10 00:20:00+00") == 2026
+
+
+def test_test_era_excludes_every_preseason():
+    seasons = (2025, 2026)
+    assert in_test_era("2025-09-05 00:20:00+00", seasons) and in_test_era("2026-02-08 23:30:00+00", seasons)
+    assert not in_test_era("2026-08-07 00:00:00+00", seasons)  # 2026 preseason
+    assert not in_test_era("2025-08-10 00:00:00+00", seasons)
+    assert not in_test_era("2024-12-01 18:00:00+00", seasons)

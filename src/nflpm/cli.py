@@ -61,10 +61,10 @@ def features() -> None:
 
 
 @app.command()
-def train() -> None:
-    """Fit F (frozen: 2000-2023, calibrated on 2024) per mode; walk-forward B; write predictions."""
+def train(refit_f: bool = typer.Option(False, "--refit-f", help="Refit F even if a frozen F exists.")) -> None:
+    """Fit F once (2000-2023, calibrated on 2024; reused after), walk-forward B, write predictions."""
     from nflpm.models.train import train_all
-    for p in train_all():
+    for p in train_all(refit_f):
         print(p)
 
 
@@ -86,6 +86,14 @@ def eval_(holdout: bool = typer.Option(False, "--holdout", help="Evaluate holdou
 
 
 @app.command()
+def papertrade() -> None:
+    """Kalshi paper trades for B and F (pre-holdout) -> reports/papertrade_{mode}.md."""
+    from nflpm.backtest.paper_trade import papertrade as run
+    for p in run():
+        print(p)
+
+
+@app.command()
 def validate() -> None:
     """Validate clean and feature tables; exit 1 on any failure."""
     from nflpm.paths import data_root
@@ -95,6 +103,30 @@ def validate() -> None:
         print("FAIL", e)
     print(f"{len(errs)} validation failures")
     raise typer.Exit(1 if errs else 0)
+
+
+@app.command()
+def notify(unit: str = typer.Option(..., "--unit")) -> None:
+    """OnFailure hook: log to the journal and run ops.notify_cmd (best-effort)."""
+    import subprocess
+    from nflpm.paths import config
+    print(f"nflpm: unit {unit} failed")
+    try:
+        subprocess.run(config()["ops"]["notify_cmd"].format(unit=unit), shell=True, timeout=30)
+    except Exception as e:  # best-effort: never mask the original failure
+        print(f"notify_cmd failed: {e!r}")
+
+
+@app.command()
+def backup() -> None:
+    """rsync raw/ to ops.backup_dir (snapshots + fine Polymarket history are irreplaceable); warns if unset."""
+    import subprocess
+    from nflpm.paths import config, data_root
+    dest = config()["ops"]["backup_dir"]
+    if not dest:
+        print("WARNING: ops.backup_dir is unset; raw/ (irreplaceable snapshots and fine-grained history) has no backup")
+        return
+    raise typer.Exit(subprocess.run(["rsync", "-a", f"{data_root()}/raw/", f"{dest.rstrip('/')}/raw/"]).returncode)
 
 
 @app.command()

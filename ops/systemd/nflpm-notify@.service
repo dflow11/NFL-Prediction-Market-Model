@@ -1,0 +1,7 @@
+[Unit]
+Description=nflpm: failure notice for %i
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO@
+ExecStart=@UV@ run --quiet nflpm notify --unit %i

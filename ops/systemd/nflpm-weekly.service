@@ -1,0 +1,16 @@
+[Unit]
+Description=nflpm: weekly ingest -> transform -> features -> validate -> train -> eval
+After=network-online.target
+OnFailure=nflpm-notify@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO@
+ExecStart=@UV@ run --quiet nflpm backup
+ExecStart=@UV@ run --quiet nflpm ingest
+ExecStart=@UV@ run --quiet nflpm transform
+ExecStart=@UV@ run --quiet nflpm features
+ExecStart=@UV@ run --quiet nflpm validate
+ExecStart=@UV@ run --quiet nflpm train
+ExecStart=@UV@ run --quiet nflpm eval
+TimeoutStartSec=3h
