@@ -5,6 +5,8 @@ description = "NFL prediction-market research: Kalshi vs Polymarket vs a footbal
 requires-python = ">=3.11"
 dependencies = [
     "httpx",
+    "nflreadpy>=0.1.5",
+    "polars>=2.1.0",
     "pyyaml",
     "tenacity",
     "typer",

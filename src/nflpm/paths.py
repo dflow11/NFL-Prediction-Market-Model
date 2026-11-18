@@ -34,10 +34,11 @@ def parse_ts(s: str) -> datetime:
 
 
 def write_raw(path: Path, body: bytes) -> None:
-    """Gzip `body` byte-exact to `path`; atomic, raises FileExistsError instead of overwriting."""
+    """Write `body` byte-exact (gzipped when `path` ends in .gz); atomic, raises FileExistsError
+    instead of overwriting."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    tmp.write_bytes(gzip.compress(body, mtime=0))
+    tmp.write_bytes(gzip.compress(body, mtime=0) if path.suffix == ".gz" else body)
     try:
         os.link(tmp, path)  # atomic and refuses an existing target, unlike rename
     finally:
