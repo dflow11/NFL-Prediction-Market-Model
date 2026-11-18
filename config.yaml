@@ -12,8 +12,11 @@ model_b: {burn_in_weeks: 4, l2_lambda: 10.0}      # frozen before holdout unlock
 paper_trade: {venue: kalshi, stake_usd: 10, edge_buffer: 0.01}
 fees:
   kalshi:   # effective-dated; fill from the fee schedule + Get Series Fee Changes; flag unknown dates
-    - {effective_from: null, taker_rate: 0.07, rounding: ceil_cent_per_order}   # UNKNOWN: fee type before 2026-01-01 not reported by the API
-    # Get Series Fee Changes (KXNFLGAME, show_historical): quadratic_with_maker_fees, multiplier 1 (taker unchanged)
+    # Before 2026-01-01: standard schedule, same taker formula (user-confirmed 2026-11-18; series with no
+    # recorded fee change = quadratic, taker multiplier 1). Paper trades are taker-only, so maker fees don't apply.
+    - {effective_from: null, taker_rate: 0.07, rounding: ceil_cent_per_order}
+    # Get Series Fee Changes (KXNFLGAME, show_historical): quadratic_with_maker_fees, multiplier 1 (taker unchanged).
+    # KXSB / KXNFLAFCCHAMP / KXNFLNFCCHAMP: no recorded changes -> standard schedule.
     - {effective_from: "2026-01-01T08:00:00Z", taker_rate: 0.07, rounding: ceil_cent_per_order}
 gap_buckets_pts: [1, 3]                           # |gap| <1, 1–3, ≥3 probability points; pre-committed
 ops: {notify_cmd: "notify-send nflpm '{unit} failed'", backup_dir: null}

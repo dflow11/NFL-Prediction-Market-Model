@@ -8,26 +8,29 @@ import polars as pl
 
 from nflpm.http import Http
 from nflpm.ingest.nflverse import read_schedules
-from nflpm.paths import REPO, UTC, data_root, parse_ts, stamp
+from nflpm.paths import REPO, UTC, config, data_root, parse_ts, stamp
 from nflpm.transform.games import MODES, build_games, predict_time
 from nflpm.transform.match_games import in_season, match
 from nflpm.transform.teams import franchise
 
 BASE = "https://api.elections.kalshi.com/trade-api/v2"
 SERIES = "KXNFLGAME"
+# Conference title games and the Super Bowl aren't KXNFLGAME events; they trade as champion futures.
+FUTURES = {"CON": ("KXNFLAFCCHAMP", "KXNFLNFCCHAMP"), "SB": ("KXSB",)}
 MAX_PERIODS = 5000  # per candlestick request (docs)
 
 
-def list_markets(http: Http, run: str) -> list[dict]:
-    """Every KXNFLGAME market, live and historical (pre-cutoff events list no nested markets, so
+def list_markets(http: Http, run: str, series: str = SERIES) -> list[dict]:
+    """Every market of `series`, live and historical (pre-cutoff events list no nested markets, so
     the markets listings are the source for both). Raw pages saved; live wins on overlap."""
+    prefix = "" if series == SERIES else f"{series}_"
     out: dict[str, dict] = {}
     for kind, path in (("historical", "/historical/markets"), ("live", "/markets")):
         cursor, n = "", 0
         while True:
-            params = dict(series_ticker=SERIES, limit=1000, **({"cursor": cursor} if cursor else {}))
+            params = dict(series_ticker=series, limit=1000, **({"cursor": cursor} if cursor else {}))
             body = http.request("GET", BASE + path, policy="nocache", params=params,
-                                raw_path=data_root() / f"raw/kalshi/markets/{run}/{kind}_page_{n}.json.gz").json()
+                                raw_path=data_root() / f"raw/kalshi/markets/{run}/{prefix}{kind}_page_{n}.json.gz").json()
             n += 1
             out.update({m["ticker"]: {**m, "historical": kind == "historical"} for m in body["markets"]})
             cursor = body.get("cursor")
@@ -49,9 +52,12 @@ def event_date(event_ticker: str):
 
 
 def market_table(markets: list[dict]) -> pl.DataFrame:
+    """Futures events (KXSB-26) carry no date in the ticker: event_date is null."""
     return pl.DataFrame([{
-        "market_ticker": m["ticker"], "event_ticker": m["event_ticker"], "team": team_of(m["ticker"]),
-        "team_code": m["ticker"].rsplit("-", 1)[1], "event_date": event_date(m["event_ticker"]),
+        "market_ticker": m["ticker"], "event_ticker": m["event_ticker"], "series": m["ticker"].split("-")[0],
+        "team": team_of(m["ticker"]), "team_code": m["ticker"].rsplit("-", 1)[1],
+        "event_date": event_date(m["event_ticker"]) if m["ticker"].startswith(SERIES + "-") else None,
+        "open_time": m.get("open_time"),
         "status": m["status"], "result": m.get("result"),
         "settlement_value_dollars": m.get("settlement_value_dollars"), "settlement_ts": m.get("settlement_ts"),
         "close_time": m.get("close_time"), "expected_expiration_time": m.get("expected_expiration_time"),
@@ -78,6 +84,37 @@ def events_for_match(mt: pl.DataFrame) -> list[dict]:
     return sorted(out, key=lambda e: e["venue_id"])
 
 
+def futures_matches(mt: pl.DataFrame, games: pl.DataFrame, taken: set[str]) -> tuple[list[dict], list[str]]:
+    """CON/SB games of the test era not already a KXNFLGAME event -> the two finalists' champion
+    markets (event open at kickoff, settling after it). Each one's YES is a game-winner market only
+    once every other team has been eliminated: `matchup_set_ts` = the last other market's settlement,
+    and prices before it are dropped downstream. Returns (match rows, game_ids with no market)."""
+    cur = config()["seasons"]["current"]
+    want = games.filter(pl.col("game_type").is_in(list(FUTURES)), pl.col("season").is_between(cur - 1, cur),
+                        pl.col("kickoff_utc").is_not_null(), ~pl.col("game_id").is_in(list(taken)))
+    rows, missing = [], []
+    for g in want.iter_rows(named=True):
+        k, found = g["kickoff_utc"], []
+        for (ev,), e in mt.filter(pl.col("series").is_in(FUTURES[g["game_type"]])).group_by("event_ticker"):
+            side = dict(zip(e["team"], e.iter_rows(named=True)))
+            if not {g["home"], g["away"]} <= side.keys():
+                continue
+            fin = [side[g["home"]], side[g["away"]]]
+            others = e.filter(~pl.col("team").is_in([g["home"], g["away"]]))["settlement_ts"]
+            if (all(m["open_time"] and parse_ts(m["open_time"]) < k for m in fin)
+                    and all(not m["settlement_ts"] or parse_ts(m["settlement_ts"]) > k for m in fin)
+                    and others.null_count() == 0
+                    and (set_ts := max(map(parse_ts, others))) < k):
+                found.append({"game_id": g["game_id"], "event_ticker": ev, "home_market": fin[0]["market_ticker"],
+                              "away_market": fin[1]["market_ticker"], "match_confidence": 1.0,
+                              "kickoff_utc": k, "matchup_set_ts": set_ts})
+        if len(found) == 1:
+            rows += found
+        else:
+            missing.append(g["game_id"])
+    return rows, missing
+
+
 def candle_windows(kickoff: datetime) -> list[tuple[int, datetime, datetime]]:
     """1-min [pt−60m, pt] per mode and [kickoff−3h, kickoff]; 60-min [kickoff−8d, kickoff].
     A window inside another window of the same interval is dropped (no duplicate data)."""
@@ -92,7 +129,8 @@ def candle_windows(kickoff: datetime) -> list[tuple[int, datetime, datetime]]:
 def fetch_candles(http: Http, market: dict, kickoff: datetime) -> int:
     """Settled markets only (immutable). Returns network requests made."""
     t = market["market_ticker"]
-    path = f"/historical/markets/{t}/candlesticks" if market["historical"] else f"/series/{SERIES}/markets/{t}/candlesticks"
+    path = (f"/historical/markets/{t}/candlesticks" if market["historical"]
+            else f"/series/{t.split('-')[0]}/markets/{t}/candlesticks")
     made = 0
     for iv, s, e in candle_windows(kickoff):
         raw = data_root() / f"raw/kalshi/candles/{t}/{iv}m/{stamp(s)}_{stamp(e)}.json.gz"
@@ -111,20 +149,23 @@ def ingest_kalshi() -> int:
     fees = http.request("GET", BASE + "/series/fee_changes", policy="nocache",
                         params=dict(series_ticker=SERIES, show_historical="true"),
                         raw_path=data_root() / f"raw/kalshi/fee_changes/{SERIES}_{run}.json.gz").json()
-    mt = market_table(list_markets(http, run))
+    mt = market_table([m for s in (SERIES, *(x for v in FUTURES.values() for x in v)) for m in list_markets(http, run, s)])
     clean = data_root() / "clean"
     clean.mkdir(parents=True, exist_ok=True)
     mt.write_parquet(clean / "kalshi_markets.parquet")
 
     games = build_games(read_schedules())
-    matched, unmatched = match(events_for_match(mt), games)
+    events = events_for_match(mt.filter(pl.col("series") == SERIES))
+    matched, unmatched = match(events, games)
     rows = []
     for m in matched:
         side = {r["team"]: r["market_ticker"] for r in mt.filter(pl.col("event_ticker") == m["venue_id"]).iter_rows(named=True)}
         rows.append({"game_id": m["game_id"], "event_ticker": m["venue_id"], "home_market": side[m["home"]],
                      "away_market": side[m["away"]], "match_confidence": m["match_confidence"],
-                     "kickoff_utc": m["kickoff_utc"]})
-    pl.DataFrame(rows).write_parquet(clean / "match_kalshi.parquet")
+                     "kickoff_utc": m["kickoff_utc"], "matchup_set_ts": None})
+    fut, fut_missing = futures_matches(mt, games, {r["game_id"] for r in rows})
+    rows += fut
+    pl.DataFrame(rows, infer_schema_length=None).write_parquet(clean / "match_kalshi.parquet")
     report = REPO / "reports/unmatched_kalshi.csv"
     report.parent.mkdir(exist_ok=True)
     with report.open("w", newline="") as f:
@@ -136,10 +177,11 @@ def ingest_kalshi() -> int:
     settled = {r["market_ticker"]: r for r in mt.filter(pl.col("settlement_ts").is_not_null()).iter_rows(named=True)}
     made = sum(fetch_candles(http, settled[t], r["kickoff_utc"])
                for r in rows for t in (r["home_market"], r["away_market"]) if t in settled)
-    n_in = sum(1 for e in events_for_match(mt) if in_season(e["date_et"], games))
+    n_in = sum(1 for e in events if in_season(e["date_et"], games))
     n_unm_in = sum(1 for u in unmatched if in_season(u["date_et"], games))
     print(f"cutoff={cutoff.get('market_settled_ts')} markets={mt.height} events={mt['event_ticker'].n_unique()} "
-          f"in_season_events={n_in} matched={len(rows)} unmatched_in_season={n_unm_in} "
-          f"unmatched_total={len(unmatched)} match_rate={len(rows) / max(n_in, 1):.4f}")
+          f"in_season_events={n_in} matched={len(matched)} unmatched_in_season={n_unm_in} "
+          f"unmatched_total={len(unmatched)} match_rate={len(matched) / max(n_in, 1):.4f}")
+    print(f"futures_matched={len(fut)} futures_missing={fut_missing}")
     print(f"settled_markets={len(settled)} candle_requests={made} fee_changes={fees.get('series_fee_change_arr')}")
     return 0

@@ -44,13 +44,17 @@ def quote(bid: float | None, ask: float | None, last: float | None) -> tuple:
 
 
 def kalshi_candles(root: Path, match: pl.DataFrame) -> list[dict]:
+    """Futures rows (matchup_set_ts set) keep only candles from the moment the matchup was set."""
     rows = []
     for r in match.iter_rows(named=True):
+        since = r.get("matchup_set_ts")
         for side in ("home", "away"):
             t = r[f"{side}_market"]
             for f in sorted((root / f"raw/kalshi/candles/{t}").glob("*m/*.json.gz")):
                 res = int(f.parent.name[:-1]) * 60
                 for c in _load(f)["candlesticks"]:
+                    if since and datetime.fromtimestamp(c["end_period_ts"], UTC) <= since:
+                        continue
                     bid, ask, mid, src = quote(_px(c.get("yes_bid")), _px(c.get("yes_ask")), _px(c.get("price")))
                     rows.append({"venue": "kalshi", "game_id": r["game_id"], "market_id": t, "side": side,
                                  "ts_utc": datetime.fromtimestamp(c["end_period_ts"], UTC), "ts_kind": "candle_end",

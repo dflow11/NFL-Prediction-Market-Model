@@ -91,6 +91,8 @@ def match_errors(kalshi: pl.DataFrame, kalshi_markets: pl.DataFrame, poly: pl.Da
             if dup.height:
                 errs.append(f"{name}: {dup.height} {col} values matched more than once, e.g. {dup[col][0]}")
     per_event = kalshi_markets.group_by("event_ticker").len()
+    if "matchup_set_ts" in kalshi.columns:  # futures events hold every contender's market
+        kalshi = kalshi.filter(pl.col("matchup_set_ts").is_null())
     bad = kalshi.join(per_event, on="event_ticker", how="left").filter(pl.col("len") != 2)
     if bad.height:
         errs.append(f"match_kalshi: {bad.height} matched events without exactly 2 team markets")

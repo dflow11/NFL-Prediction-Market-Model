@@ -49,21 +49,28 @@ def schedule_context(sched: pl.DataFrame, games: pl.DataFrame) -> pl.DataFrame:
 
 
 def qb_change(grid: pl.DataFrame, games: pl.DataFrame, injuries: pl.DataFrame) -> pl.DataFrame:
-    """Per side: previous game's starter listed Out/Doubtful in this game week's injury rows with
-    date_modified < predict_time. Null when no qualifying rows (always before 2009, and whenever the
-    injury data has no date_modified). Needs grid columns home_prev_qb_id / away_prev_qb_id."""
+    """Per side: previous game's starter listed Out/Doubtful in this game week's injury rows published
+    before predict_time. Null when no qualifying rows (always before 2009). Published = date_modified;
+    rows without one (2025+) count as published 16:00 ET the day before kickoff, the latest an official
+    game-status report comes out: pregame sees them, tuesday never does (as with real timestamps).
+    Needs grid columns kickoff_utc, home_prev_qb_id / away_prev_qb_id."""
     inj = injuries
     if "date_modified" not in inj.columns:
         inj = inj.with_columns(date_modified=pl.lit(None, pl.Datetime("us", "UTC")))
     inj = inj.select(season=pl.col("season").cast(pl.Int32), week=pl.col("week").cast(pl.Int32),
                      team=pl.col("team").replace_strict(aliases("nflverse"), default=None, return_dtype=pl.String),
                      gsis_id="gsis_id", out=pl.col("report_status").is_in(["Out", "Doubtful"]),
-                     date_modified="date_modified").filter(pl.col("date_modified").is_not_null())
+                     date_modified="date_modified")
     g = grid.join(games.select("game_id", "season", "week", "home", "away"), on="game_id")
     out = grid.select("game_id", "mode")
     for side in ("home", "away"):
-        rows = (g.select("game_id", "mode", "predict_time", "season", "week", team=side, qb=f"{side}_prev_qb_id")
-                .join(inj, on=["season", "week", "team"]).filter(pl.col("date_modified") < pl.col("predict_time")))
+        rows = (g.select("game_id", "mode", "predict_time", "season", "week", team=side, qb=f"{side}_prev_qb_id",
+                         day_before=pl.col("kickoff_utc").dt.convert_time_zone("America/New_York").dt.truncate("1d")
+                         .dt.offset_by("-8h").dt.convert_time_zone("UTC"))
+                .join(inj, on=["season", "week", "team"])
+                # ponytail: report-deadline proxy for missing date_modified; real timestamps win when present
+                .with_columns(date_modified=pl.coalesce("date_modified", "day_before"))
+                .filter(pl.col("date_modified") < pl.col("predict_time")))
         flag = rows.group_by("game_id", "mode").agg(
             **{f"{side}_qb_change": (pl.col("out") & (pl.col("gsis_id") == pl.col("qb"))).any().cast(pl.Int8),
                f"{side}_inj_ts": pl.col("date_modified").max()})

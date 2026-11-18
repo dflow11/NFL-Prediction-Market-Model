@@ -74,3 +74,17 @@ def test_tuesday_has_no_weather_pregame_does():
     assert (pre["temp"], pre["wind"], pre["roof_realized"], pre["roof_class"]) == (61.0, 8.0, "open", "retractable")
     assert tue["home_qb_change"] is None  # no qualifying injury rows -> null
     assert f.select("game_id", "mode").is_unique().all()
+
+
+def test_qb_flag_without_date_modified_uses_report_deadline():
+    from nflpm.features.context import qb_change
+    games, _ = tables()
+    k = games.filter(pl.col("game_id") == "w2_ab")["kickoff_utc"][0]
+    grid = pl.concat([grid_for("w2_ab", m, games) for m in ("pregame", "tuesday")]).with_columns(
+        home_prev_qb_id=pl.lit("qb_ATL"), away_prev_qb_id=pl.lit("qb_BUF"))
+    inj = pl.DataFrame([{"season": 2026, "week": 2, "team": "ATL", "gsis_id": "qb_ATL", "report_status": "Out",
+                         "date_modified": None}], schema_overrides={"date_modified": pl.Datetime("us", "UTC")})
+    q = {r["mode"]: r for r in qb_change(grid, games, inj).to_dicts()}
+    assert q["pregame"]["home_qb_change"] == 1 and q["pregame"]["away_qb_change"] is None
+    assert q["pregame"]["home_inj_ts"] == et(2026, 9, 19, 16) < k  # 16:00 ET the day before kickoff
+    assert q["tuesday"]["home_qb_change"] is None  # the report isn't out by Tuesday noon
