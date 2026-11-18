@@ -238,7 +238,7 @@ def render(d: pl.DataFrame, mode: str, title: str, plot_path: Path, coverage_csv
     parts = [f"# {title} — {mode}\n\nGenerated {datetime.now(UTC):%Y-%m-%d %H:%M} UTC. Rows: {d.height}.",
              coverage_section(d, drops, scored, coverage_csv),
              clv_section(d, mode),
-             "## 3. Primary — lead-lag\n\nΔk, Δp regressed on gap_logit (bootstrap 95% CIs).\n\n" + md_table(lead_lag(d)),
+             "## 3. Primary — lead-lag\n\ngap_logit = logit(kalshi_mid) − logit(poly_mid); Δk, Δp regressed on it (bootstrap 95% CIs). Kalshi following Polymarket shows as Δk slope → −1; Polymarket following Kalshi as Δp slope → +1.\n\n" + md_table(lead_lag(d)),
              secondary_section(scored),
              calibration_plot(scored, plot_path),
              favorite_section(d),
