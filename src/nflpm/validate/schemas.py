@@ -75,6 +75,8 @@ def feature_errors(df: pl.DataFrame, mode: str) -> list[str]:
 def training_matrix_errors(X: pl.DataFrame, kickoff: pl.Series) -> list[str]:
     """Call on every matrix before fitting/tuning."""
     errs = [f"training matrix: {c} is a line_* column" for c in X.columns if c.startswith("line_")]
+    errs += [f"training matrix: {c} is an outcome/label column" for c in X.columns
+             if c in ("home_win", "home_score", "away_score", "result")]
     n = int((kickoff >= holdout.start()).sum())
     if n:
         errs.append(f"training matrix: {n} holdout rows")

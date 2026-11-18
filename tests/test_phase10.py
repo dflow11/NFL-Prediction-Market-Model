@@ -70,3 +70,9 @@ def test_B_with_huge_lambda_is_A(monkeypatch):
     d = b_rows()
     b = T.walk_forward_B(d).join(d.select("game_id", "kalshi_mid"), on="game_id")
     assert b["p_B"].to_numpy() == pytest.approx(b["kalshi_mid"].to_numpy(), abs=1e-6)
+
+
+def test_football_matrix_never_contains_the_label():
+    feats, games, d = synthetic_feats(seasons=range(2023, 2025))
+    joined = feats.join(games.select("game_id", "home_win"), on="game_id")
+    assert "home_win" not in T.football_matrix(joined).columns

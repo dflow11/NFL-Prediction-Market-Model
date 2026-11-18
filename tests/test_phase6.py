@@ -64,3 +64,15 @@ def test_polymarket_complement_and_settlement_exclusion(tmp_path):
     assert h["p_home_mid"] == pytest.approx((0.58 + 1 - 0.44) / 2)
     assert h["p_home_bid"] is None and h["quote_source"] == "history"
     assert {(s["side"], s["payout"]) for s in settle} == {("home", 1.0), ("away", 0.0)}
+
+
+def test_float_noise_is_not_a_cross_and_real_crosses_are_flagged(tmp_path):
+    mk = pl.DataFrame([{"game_id": "g", "home_market": "H", "away_market": "A", "kickoff_utc": KICK}])
+    write_raw(tmp_path / "raw/kalshi/candles/H/1m/w.json.gz", json.dumps({"candlesticks": [candle("0.2800", "0.2900")]}).encode())
+    write_raw(tmp_path / "raw/kalshi/candles/A/1m/w.json.gz", json.dumps({"candlesticks": [candle("0.7100", "0.7200")]}).encode())
+    (h,) = collapse_home(pl.DataFrame(kalshi_candles(tmp_path, mk))).to_dicts()
+    assert not h["crossed"] and h["p_home_bid"] == 0.28 and h["p_home_ask"] == 0.29  # 1 − 0.71 == 0.29, not above it
+    write_raw(tmp_path / "raw/kalshi/candles/H/1m/x.json.gz", json.dumps({"candlesticks": [{**candle("0.3000", "0.3100"), "end_period_ts": TS + 60}]}).encode())
+    write_raw(tmp_path / "raw/kalshi/candles/A/1m/x.json.gz", json.dumps({"candlesticks": [{**candle("0.7200", "0.7300"), "end_period_ts": TS + 60}]}).encode())
+    rows = collapse_home(pl.DataFrame(kalshi_candles(tmp_path, mk))).sort("ts_utc").to_dicts()
+    assert rows[1]["crossed"] and rows[1]["p_home_bid"] is None and rows[1]["p_home_mid"] == pytest.approx(0.29)

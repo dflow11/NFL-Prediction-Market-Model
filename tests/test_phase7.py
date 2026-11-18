@@ -37,6 +37,7 @@ def test_holdout_rows_and_line_columns_fail_in_training_matrix():
     assert any("holdout" in e for e in training_matrix_errors(pl.DataFrame({"x": [1, 2]}), k))
     assert any("line_" in e for e in training_matrix_errors(pl.DataFrame({"line_spread": [1.0]}), k[:1]))
     assert training_matrix_errors(pl.DataFrame({"x": [1]}), k[:1]) == []
+    assert any("label" in e for e in training_matrix_errors(pl.DataFrame({"home_win": [True]}), k[:1]))
 
 
 def test_feature_hygiene():

@@ -109,20 +109,28 @@ def kalshi_settlements(markets: pl.DataFrame, match: pl.DataFrame) -> pl.DataFra
 def collapse_home(long: pl.DataFrame) -> pl.DataFrame:
     """One row per (venue, game, ts_kind, resolution, ts): home probability from both team markets.
     mid = mean(home, 1 − away); bid = max(home_bid, 1 − away_ask); ask = min(home_ask, 1 − away_bid).
-    A single available side is used alone and flagged (one_side)."""
+    A single available side is used alone and flagged (one_side). When the two books cross (combined
+    bid > ask, ~1% of candles, usually 1¢ from closes of two separate books), bid/ask are nulled and
+    the row flagged `crossed`; the mid is kept."""
     def side(s: str, p: str) -> pl.DataFrame:
         return long.filter(pl.col("side") == s).select(
             *HOME_KEY, **{f"{p}b": "bid", f"{p}a": "ask", f"{p}m": "mid", f"{p}s": "quote_source"})
     j = side("home", "h").join(side("away", "a"), on=HOME_KEY, how="full", coalesce=True)
     return j.select(
         *HOME_KEY,
-        p_home_mid=pl.mean_horizontal("hm", 1 - pl.col("am")),
-        p_home_bid=pl.max_horizontal("hb", 1 - pl.col("aa")),
-        p_home_ask=pl.min_horizontal("ha", 1 - pl.col("ab")),
+        # rounded to 1e-6: prices are cent / tenth-cent units, and 1 − x float noise would fake crossed books
+        p_home_mid=pl.mean_horizontal("hm", 1 - pl.col("am")).round(6),
+        p_home_bid=pl.max_horizontal("hb", 1 - pl.col("aa")).round(6),
+        p_home_ask=pl.min_horizontal("ha", 1 - pl.col("ab")).round(6),
         quote_source=pl.when((pl.col("hs") == "last_trade") | (pl.col("as") == "last_trade"))
         .then(pl.lit("last_trade")).otherwise(pl.coalesce("hs", "as")),
         one_side=pl.col("hm").is_null() | pl.col("am").is_null(),
-    ).filter(pl.col("p_home_mid").is_not_null()).sort(HOME_KEY)
+    ).filter(pl.col("p_home_mid").is_not_null()).with_columns(
+        crossed=(pl.col("p_home_bid") > pl.col("p_home_ask")).fill_null(False)
+    ).with_columns(
+        p_home_bid=pl.when(~pl.col("crossed")).then("p_home_bid"),
+        p_home_ask=pl.when(~pl.col("crossed")).then("p_home_ask"),
+    ).sort(HOME_KEY)
 
 
 def build_prices(root: Path) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:

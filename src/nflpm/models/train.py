@@ -25,6 +25,7 @@ from nflpm.validate.schemas import training_matrix_errors
 F_TRAIN = range(2000, 2024)  # frozen: never refit on 2025+
 F_CALIB = 2024
 CONTEXT = ["neutral_site", "away_west_to_east_early", "temp", "wind"]
+LABELS = {"home_win", "home_score", "away_score"}  # outcomes: never features
 
 
 def market_models(feats: pl.DataFrame, games: pl.DataFrame) -> pl.DataFrame:
@@ -43,7 +44,8 @@ def market_models(feats: pl.DataFrame, games: pl.DataFrame) -> pl.DataFrame:
 
 def football_matrix(f: pl.DataFrame) -> pl.DataFrame:
     """Team-form + context columns as floats (no market, line, id or timestamp columns)."""
-    cols = [c for c in f.columns if c.startswith(("home_", "away_")) and not c.endswith("_src_max_ts")]
+    cols = [c for c in f.columns if c.startswith(("home_", "away_")) and not c.endswith("_src_max_ts")
+            and c not in LABELS]
     return f.select(
         pl.col(cols + [c for c in CONTEXT if c in f.columns]).cast(pl.Float64),
         *[(pl.col("roof_class") == v).cast(pl.Float64).alias(f"roof_{v}") for v in ("dome", "outdoors", "retractable")],
