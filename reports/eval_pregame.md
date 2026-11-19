@@ -1,6 +1,6 @@
 # Evaluation (pre-holdout) — pregame
 
-Generated 2026-11-18 21:20 UTC. Rows: 7167.
+Generated 2026-11-19 01:52 UTC. Rows: 7167.
 
 ## 1. Coverage
 
@@ -70,11 +70,11 @@ gap_logit = logit(kalshi_mid) − logit(poly_mid); Δk, Δp regressed on it (boo
 | stratum | target | n | slope | ci_lo | ci_hi |
 |---|---|---|---|---|---|
 | all | dk | 435 | 0.0563 | -0.0219 | 0.1359 |
-| all | dp | 435 | 0.1524 | 0.0129 | 0.3189 |
+| all | dp | 435 | 0.1601 | 0.0598 | 0.2763 |
 | poly_res<=300s | dk | 133 | -0.7796 | -1.1175 | -0.5260 |
-| poly_res<=300s | dp | 133 | 0.1570 | -1.7313 | 2.2454 |
+| poly_res<=300s | dp | 133 | 0.0294 | -0.3289 | 0.3066 |
 | poly_res>=1800s | dk | 302 | 0.0991 | 0.0194 | 0.1794 |
-| poly_res>=1800s | dp | 302 | 0.1775 | 0.0707 | 0.3065 |
+| poly_res>=1800s | dp | 302 | 0.1705 | 0.0655 | 0.2985 |
 
 ## 4. Secondary — scoring on the scoring set
 

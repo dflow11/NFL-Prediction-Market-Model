@@ -229,6 +229,7 @@ This phase answers the venue question before any football modeling.
   - `poly_mid, poly_staleness_sec, poly_resolution_sec, poly_source` — prefer a snapshot within `max_snapshot_age_sec`, else history.
   - `gap_logit = logit(kalshi_mid) − logit(poly_mid)`, with probabilities clipped to [0.01, 0.99].
   - Eval targets only, never features: `kalshi_close`, `poly_close` = last value with ts ≤ kickoff.
+    *Deviation (approved 2026-11-18):* `poly_close` uses ts < kickoff; Polymarket's point stamped at kickoff spikes as the book clears.
 - **Models:**
   - A = `kalshi_mid`.
   - A2 = inv_logit(0.5·logit(kalshi_mid) + 0.5·logit(poly_mid)); falls back to A when poly is missing (flagged).

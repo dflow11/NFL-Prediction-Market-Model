@@ -95,10 +95,12 @@ def market_features(grid: pl.DataFrame, home: pl.DataFrame) -> pl.DataFrame:
 
 
 def targets(games: pl.DataFrame, home: pl.DataFrame) -> pl.DataFrame:
-    """Eval targets only, never features: last home probability with ts ≤ kickoff per venue."""
+    """Eval targets only, never features: last home probability per venue. Kalshi: ts ≤ kickoff (a candle
+    ending at kickoff is the last pre-game minute). Polymarket: ts < kickoff — its point stamped at kickoff
+    spikes as the book clears at game start (deviation from the spec's ≤, approved 2026-11-18)."""
     g = games.select("game_id", "kickoff_utc").filter(pl.col("kickoff_utc").is_not_null())
     out = g
-    for venue, col in (("kalshi", "kalshi_close"), ("polymarket", "poly_close")):
+    for venue, col, strict in (("kalshi", "kalshi_close", False), ("polymarket", "poly_close", True)):
         p = _one_per_ts(home.filter(pl.col("venue") == venue)).select("game_id", "ts_utc", **{col: "p_home_mid"})
-        out = _asof(out, p, "kickoff_utc", strict=False).rename({"ts_utc": f"{col}_ts"})
+        out = _asof(out, p, "kickoff_utc", strict=strict).rename({"ts_utc": f"{col}_ts"})
     return out.sort("game_id")

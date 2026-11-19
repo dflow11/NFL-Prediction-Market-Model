@@ -70,12 +70,14 @@ def test_tuesday_row_dropped_when_previous_game_not_over(tmp_path, monkeypatch):
     assert (tmp_path / "logs/features/dropped.jsonl").exists()
 
 
-def test_targets_are_last_value_at_or_before_kickoff():
+def test_targets_kalshi_at_or_before_kickoff_polymarket_strictly_before():
     t = targets(pl.DataFrame({"game_id": ["g"], "kickoff_utc": [KICK]}),
                 pl.DataFrame([home_row("kalshi", KICK - timedelta(minutes=1), 0.41),
                               home_row("kalshi", KICK, 0.43),
-                              home_row("kalshi", KICK + timedelta(minutes=1), 0.9)])).to_dicts()[0]
-    assert t["kalshi_close"] == 0.43 and t["poly_close"] is None
+                              home_row("kalshi", KICK + timedelta(minutes=1), 0.9),
+                              home_row("polymarket", KICK - timedelta(minutes=5), 0.325, "history_point", 300),
+                              home_row("polymarket", KICK, 0.66, "history_point", 300)])).to_dicts()[0]
+    assert t["kalshi_close"] == 0.43 and t["poly_close"] == 0.325  # the at-kickoff spike is not the close
 
 
 @pytest.mark.parametrize("x", [0.0, 1.0])
