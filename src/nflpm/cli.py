@@ -126,7 +126,10 @@ def backup() -> None:
     if not dest:
         print("WARNING: ops.backup_dir is unset; raw/ (irreplaceable snapshots and fine-grained history) has no backup")
         return
-    raise typer.Exit(subprocess.run(["rsync", "-a", f"{data_root()}/raw/", f"{dest.rstrip('/')}/raw/"]).returncode)
+    from pathlib import Path
+    out = Path(dest).expanduser() / "raw"
+    out.mkdir(parents=True, exist_ok=True)
+    raise typer.Exit(subprocess.run(["rsync", "-a", f"{data_root()}/raw/", f"{out}/"]).returncode)
 
 
 @app.command()

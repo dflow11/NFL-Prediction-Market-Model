@@ -24,9 +24,10 @@ Data goes to `$NFLPM_DATA_DIR`, defaulting to `~/nflpm-data`.
 
 ## Back up raw/
 
-Snapshots and fine-grained Polymarket history can never be re-fetched. Set `ops.backup_dir` in
-`config.yaml` to a directory on another disk; until then `nflpm backup` (daily and at the start of
-the weekly run) only prints a warning.
+Snapshots and fine-grained Polymarket history can never be re-fetched. `nflpm backup` (daily and at
+the start of the weekly run) rsyncs `raw/` to `ops.backup_dir` (`~/nflpm-backup`; `~` is expanded).
+That directory is on the same disk as the data, so it guards against deletion, not disk failure:
+point it at another disk when one is available. Unset, `nflpm backup` only prints a warning.
 
 ## Keep the PC awake
 
