@@ -59,3 +59,22 @@ def test_coverage_counts_gaps_without_interpolation(tmp_path):
     assert (row["covered"], row["slots"], row["under_80"]) == (26, 36, True)
     missing = row["missing_slots"].split(";")
     assert len(missing) == 10 and missing[0] == (start + timedelta(minutes=50)).strftime("%H%MZ")
+
+
+def test_collector_fetches_game_and_playoff_futures_series():
+    import httpx
+
+    from nflpm.collect.snapshots import kalshi
+    from nflpm.http import Http
+
+    seen = []
+
+    def handler(req):
+        s, cur = req.url.params["series_ticker"], req.url.params.get("cursor")
+        seen.append((s, cur))
+        page = {"markets": [{"ticker": f"{s}-X"}], "cursor": "p2" if s == "KXSB" and not cur else ""}
+        return httpx.Response(200, json=page)
+
+    parts, n = kalshi(Http(transport=httpx.MockTransport(handler)), datetime.now(UTC))
+    assert {s for s, _ in seen} == {"KXNFLGAME", "KXNFLAFCCHAMP", "KXNFLNFCCHAMP", "KXSB"}
+    assert ("KXSB", "p2") in seen and len(parts) == n == 5  # KXSB paged twice

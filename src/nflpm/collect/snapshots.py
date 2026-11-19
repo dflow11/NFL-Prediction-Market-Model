@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 import httpx
 
 from nflpm.http import Http
+from nflpm.ingest.kalshi import FUTURES, SERIES
 from nflpm.ingest.polymarket import list_gamma
 from nflpm.paths import UTC, append_jsonl, config, data_root, parse_ts, write_raw
 
@@ -25,19 +26,23 @@ def wrap(r: httpx.Response) -> dict:
 
 
 def kalshi(http: Http, now: datetime) -> tuple[list[dict], int]:
-    # min/max_close_ts can't be combined with status=open (API docs), and the open
-    # KXNFLGAME list is small, so the whole list is stored; horizon filtering happens downstream.
-    parts, n, cursor = [], 0, ""
-    while True:
-        params = dict(series_ticker="KXNFLGAME", status="open", limit=1000)
-        r = http.request("GET", KALSHI, policy="snapshot",
-                         params={**params, **({"cursor": cursor} if cursor else {})})
-        parts.append(wrap(r))
-        body = r.json()
-        n += len(body["markets"])
-        cursor = body.get("cursor")
-        if not cursor:
-            return parts, n
+    """Open markets of KXNFLGAME and the playoff futures series (CON/SB games trade there).
+    min/max_close_ts can't be combined with status=open (API docs), and each open list is small,
+    so whole lists are stored; horizon filtering and game matching happen downstream."""
+    parts, n = [], 0
+    for series in (SERIES, *(s for v in FUTURES.values() for s in v)):
+        cursor = ""
+        while True:
+            params = dict(series_ticker=series, status="open", limit=1000)
+            r = http.request("GET", KALSHI, policy="snapshot",
+                             params={**params, **({"cursor": cursor} if cursor else {})})
+            parts.append(wrap(r))
+            body = r.json()
+            n += len(body["markets"])
+            cursor = body.get("cursor")
+            if not cursor:
+                break
+    return parts, n
 
 
 def open_tokens(http: Http, now: datetime) -> list[dict]:
